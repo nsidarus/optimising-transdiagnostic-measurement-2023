@@ -124,7 +124,7 @@ perform_study_analysis <- function(
 
   # Save het.mat if save_hetmat is TRUE
   if (save_hetmat) {
-    dir.create(file.path("data", "hetmats"), showWarnings = FALSE, recursive = TRUE)
+    dir.create(file.path("data", "hetmats"), showWarnings = TRUE, recursive = TRUE)
     save(het.mat, file = file.path("data", "hetmats", paste0("hetmat_", study_name, ".RData")))
   }
 
@@ -140,8 +140,8 @@ perform_study_analysis <- function(
   # sPlot <- plotnScree(nS, main = "Scree Test solutions")
   
   # Ensure the directory exists before saving
-  dir.create(file.path("figs", study_name), showWarnings = TRUE, recursive = TRUE)
-  # ggsave(file.path("figs", study_name, paste0("screePlot", study_name, ".png")), plot = sPlot, width = 10, height = 5)
+  dir.create(file.path("figures", study_name), showWarnings = TRUE, recursive = TRUE)
+  # ggsave(file.path("figures", study_name, paste0("screePlot", study_name, ".png")), plot = sPlot, width = 10, height = 5)
 
   # Factor Analysis
   fa_result <- fa(r = het.mat, nfactors = n_factors, n.obs = nrow(study_data), rotate = "oblimin", fm="ml", scores="regression")
@@ -157,11 +157,11 @@ perform_study_analysis <- function(
   # Create and Save Plots
   plots <- lapply(loadings_cols, function(col) loadings_plot(loadings_df, col, col, loadings_color_seq))
   plots_arranged <- do.call(grid.arrange, c(plots, ncol=1))
-  ggsave(file.path('figs', study_name, paste0('loadings', study_name, '.png')), plots_arranged, width = 10, height = 5)
+  ggsave(file.path('figures', study_name, paste0('loadings', study_name, '.png')), plots_arranged, width = 10, height = 5)
 
   histograms <- lapply(scores_cols, function(col) histogram_plot(scores_df, col, '#2f2f2f'))
   histograms_arranged <- do.call(grid.arrange, c(histograms, ncol=3))
-  ggsave(file.path('figs', study_name, paste0('factorScoresHists', study_name, '.png')), histograms_arranged, width = 10, height = 5)
+  ggsave(file.path('figures', study_name, paste0('factorScoresHists', study_name, '.png')), histograms_arranged, width = 10, height = 5)
 
   # Save Factor Scores and Loadings
   scores_dir <- 'data/EFAscores'
@@ -170,6 +170,13 @@ perform_study_analysis <- function(
   dir.create(loadings_dir, showWarnings = TRUE, recursive = TRUE)
   write.csv(scores_df, file.path(scores_dir, paste0(study_name, 'Scores.csv')))
   write.csv(loadings_df, file.path(loadings_dir, paste0(study_name, 'Loadings.csv')))
+
+
+  # Create EFAscores directory if it doesn't exist
+  dir.create("data/EFAscores", showWarnings = TRUE, recursive = TRUE)
+
+  # Save scores df
+  write.csv(scores_df, file.path("data/EFAscores", paste0(study_name, "Scores.csv")))
 
   # Return the results as a list
   return(list(
@@ -200,7 +207,6 @@ plot_eigenvalues <- function(eigenvalues, n_factors, title = "Eigenvalue Plot") 
 
   return(p)
 }
-
 
 
 ####################################

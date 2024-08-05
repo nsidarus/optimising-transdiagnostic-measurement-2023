@@ -6,338 +6,347 @@
 ################################################################################
 ## LOAD THE PREDICTED FACTOR SCORES FOR ROUAULT BASED ON THE REDUCED ITEMS    ##
 ## PUT THESE INTO THE REGRESSIONS AND SEE IF SAME RESULTS                     ##
+## Code here is adapted from the original code                                ##
 ################################################################################
 
-## CLEAR ALL ##
-rm(list=ls())
+# NOTE - the data used for the main EFA has one subject excluded, based on their MRatio being negative.
+# In the original analysis, this subject was included in every other analysis. Here, we exclude them
+# for simplicity. This does not change the results.
 
-## LOADING LIBRARIES/TOOL ##
-library(ggplot2) # for plotting graphs
-library(gridExtra) # for ploting graphs
-library(lme4) # for linear regression functions
-library(plyr) # for collapse-and-mean functions like ddply
-library(psych)
-library(GPArotation)
-library(paran)
-library(reshape)
-library(polycor)
-library(nFactors)
-library(R.matlab)
-library(reshape)
-library(doBy)
-options(scipen = 999) # to display variable quantities in decimals (not in scientific notation format)
+# Clear Workspace
+rm(list = ls())
 
-## SET DIRECTORY  ##
-setwd('/Users/alexhopkins/Dropbox (Royal Holloway)/ESRC_NIG/RTMAT/')
-baseDir <- '/Users/alexhopkins/Dropbox (Royal Holloway)/ESRC_NIG/RTMAT/'
+# Restore Renv
+renv::restore()
+
+# Load Libraries
+# Libraries for plotting and graphics
+library(ggplot2)        # For creating plots
+library(gridExtra)      # For arranging multiple grid-based figures on one page
+library(ggpubr)         # For arranging multiple figures on one page  
+
+# Libraries for statistical analysis and modeling
+library(lme4)           # For linear mixed-effects models
+library(plyr)           # For data manipulation
+library(psych)          # For psychometric analysis and data cleaning
+library(polycor)        # For polychoric and polyserial correlations
+library(nFactors)       # For factor analysis and computing the number of factors
+
+# Libraries for data transformation and summary
+library(reshape)        # For reshaping data
+library(doBy)           # For descriptive statistics and group-wise computations
+library(dplyr)          # For data manipulation and transformation
+library(purrr)          # For functional programming
+
+# Libraries for specific statistical techniques and other utilities
+library(GPArotation)    # For factor rotation methods
+library(paran)          # For Horn's Test of principal components/factors
+library(R.matlab)       # For reading and writing MAT files in MATLAB
+
+# Set Options
+options(scipen = 999)   # Display variable quantities in decimals (not in scientific notation)
+
+# Define a function to plot the regression coefficients
+plot_factor_fig <- function(data, y_intercept = 0, ylim_lower = -0.3, ylim_upper = 0.3, fill_colors = c("#8dd3c7", "#ffffbc", "#bebada")) {
+  
+  ggplot(data = data, aes(x = Label, y = Estimate, group = Type)) +
+    geom_bar(aes(fill = Type), colour = "black", size = 1.2, stat = "identity", position = "dodge", width = 0.8) +
+    geom_errorbar(aes(ymin = Estimate - StdError, ymax = Estimate + StdError), colour = "black", width = 0.3, size = 1.2, position = position_dodge(.8)) +
+    geom_hline(yintercept = y_intercept, size = 1) +
+    theme_classic() +
+    labs(title = " ", x = " ", y = "Regression Coefficient") +
+    theme(
+      axis.title.y = element_text(size = rel(2.5), angle = 90, margin = margin(0, 20, 0, 0)),
+      axis.title.x = element_text(size = rel(3), angle = 0, margin = margin(20, 0, 0, 0)),
+      plot.title = element_text(size = rel(3), angle = 0),
+      legend.text = element_text(size = 20),
+      legend.title = element_blank(),
+      axis.text.x = element_text(angle = 0, size = 20),
+      axis.text.y = element_text(angle = 0, size = 25),
+      axis.line.x = element_line(color = "black", size = 1.2),
+      axis.line.y = element_line(color = "black", size = 1.2),
+      axis.ticks.y = element_line(size = (1.5)),
+      axis.ticks.x = element_line(size = (1.5)),
+      axis.ticks.length = unit(0.4, "cm")
+    ) +
+    scale_x_discrete(expand = c(0, 0.5)) +
+    scale_fill_manual(values = fill_colors) +
+    theme(legend.position = "none") +
+    ylim(ylim_lower, ylim_upper)
+}
+
 
 ## LOADING DATA ##
-qnData = readMat("analysis/metacognition/ME_phase2_excludqnadata_all.mat") # load questionnaire data
-taskData = readMat("analysis/metacognition/ME_phase2_excludanalyseddat_all.mat") # load task performance data
-HDDM = read.csv('analysis/metacognition/subjParams_2k_3chain.csv') # load HDDM data
-HDDMpara = data.frame(t(HDDM[1:nrow(HDDM),2:length(HDDM)]))
+# Load Data from GitHub
+# Define the URL of the .mat file on GitHub
+qnData_url <- "https://github.com/metacoglab/RouaultSeowGillanFleming/raw/master/ME_phase2_excludqnadata_all.mat"
+taskData_url <- "https://github.com/metacoglab/RouaultSeowGillanFleming/raw/master/ME_phase2_excludanalyseddat_all.mat"
+
+# Download and load the questionnaire data .mat file
+temp_qnData <- tempfile(fileext = ".mat")
+download.file(qnData_url, temp_qnData, mode = "wb")
+qnData <- readMat(temp_qnData)
+
+# Download and load the task performance data .mat file
+temp_taskData <- tempfile(fileext = ".mat")
+download.file(taskData_url, temp_taskData, mode = "wb")
+taskData <- readMat(temp_taskData)
+
+# Load the HDDM data .csv file directly
+HDDM <- read.csv(url("https://raw.githubusercontent.com/metacoglab/RouaultSeowGillanFleming/master/subjParams_2k_3chain.csv"))
+
+# Transform HDDM data
+HDDMpara <- data.frame(t(HDDM[1:nrow(HDDM), 2:ncol(HDDM)]))
 colnames(HDDMpara) <- c("a", "t", "v_inter", "v_delta")
 
 ## LOAD PREDICTED FACTOR SCORES
-factorScores = read.csv('data/predictedFactorScoresFinal.csv') # load HDDM data
-qnsRou <- factorScores[1827:2322,1:length(factorScores)]
+factorScores <- read.csv('data/predictions_best.csv') # load HDDM data
+# select where study == 3 (Rouault)
+factorScores <- factorScores[factorScores$study == 3,]
 
-rouaultItems = read.csv('data/raw/RouaultSeow_BP.csv') # load HDDM data
-ids <- rouaultItems$subid
-qnsRou$id <- ids
-qnsRou$X <- NULL
-qnsRou$Subject <- NULL
+# Initialize Task Performance Data Variables
+n_taskData <- length(taskData$analyseddata)
+task_perf_vars <- c("id", "age", "gender", "accuracy", "mRatio", "confMean")
+taskPerfData <- as.data.frame(matrix(0, n_taskData, length(task_perf_vars)))
+colnames(taskPerfData) <- task_perf_vars
 
-## CREATE EMPTY OBJECTS ##
-# create objects for variables from task performance data
-id<-matrix(0,length(taskData$analyseddata),1) # subject id
-age<-matrix(0,length(taskData$analyseddata),1)
-gender<-matrix(0,length(taskData$analyseddata),1)
-accuracy<-matrix(0,length(taskData$analyseddata),1) # accuracy
-mRatio<-matrix(0,length(taskData$analyseddata),1)   # metacognitive efficiency
-confMean<-matrix(0,length(taskData$analyseddata),1) # mean confidence
+# Initialize Questionnaire Data Variables
+n_qnData <- length(qnData$allqna)
+qn_data_vars <- c("qnid", "zung", "anxiety", "ocir", "leb", "iq", "bis", "schizo", "eat", "apathy", "alcohol")
+qnDataMatrix <- as.data.frame(matrix(0, n_qnData, length(qn_data_vars)))
+colnames(qnDataMatrix) <- qn_data_vars
 
-# create objects for variables from task questionnaire data
-qnid<-matrix(0,length(qnData$allqna),1) # subject id
-zung<-matrix(0,length(qnData$allqna),1)
-anxiety<-matrix(0,length(qnData$allqna),1)
-ocir<-matrix(0,length(qnData$allqna),1)
-leb<-matrix(0,length(qnData$allqna),1)
-iq<-matrix(0,length(qnData$allqna),1)
-bis<-matrix(0,length(qnData$allqna),1)
-schizo<-matrix(0,length(qnData$allqna),1)
-eat<-matrix(0,length(qnData$allqna),1)
-apathy<-matrix(0,length(qnData$allqna),1)
-alcohol<-matrix(0,length(qnData$allqna),1)
 
-## EXTRACTING DATA ##
-# extracting data from allqna data file
-# loop over for all subjects
-for (i in 1:length(qnData$allqna)) 
-{
-  qnid[i] = qnData$allqna[[i]][[1]][,,1]$id
-  zung[i] = qnData$allqna[[i]][[1]][,,1]$zung[,,1]$score #first brackets is subject number
-  anxiety[i] = qnData$allqna[[i]][[1]][,,1]$anxiety[,,1]$score
-  ocir[i] = qnData$allqna[[i]][[1]][,,1]$ocir[,,1]$score
-  leb[i] = qnData$allqna[[i]][[1]][,,1]$leb[,,1]$score
-  iq[i] = qnData$allqna[[i]][[1]][,,1]$iq[,,1]$score
-  bis[i] = qnData$allqna[[i]][[1]][,,1]$bis[,,1]$score[,,1]$total
-  schizo[i] = qnData$allqna[[i]][[1]][,,1]$schizo[,,1]$score[,,1]$total
-  eat[i] = qnData$allqna[[i]][[1]][,,1]$eat[,,1]$score[,,1]$total
-  apathy[i] = qnData$allqna[[i]][[1]][,,1]$apathy[,,1]$score
-  alcohol[i] = qnData$allqna[[i]][[1]][,,1]$alcohol[,,1]$score
-}
+# Extract Data from allqna Data File
+extract_vars <- c("id", "zung", "anxiety", "ocir", "leb", "iq", "bis", "schizo", "eat", "apathy", "alcohol")
 
-# extracting data from analysed data
-# loop over for all subjects
-for (i in 1:length(taskData$analyseddata))
-{
-  id[i]=taskData$analyseddata[[i]][[1]][,,1]$data[1,4]
-  age[i] =taskData$analyseddata[[i]][[1]][,,1]$data[1,2]
-  gender[i]=taskData$analyseddata[[i]][[1]][,,1]$data[1,3]
-  confMean[i] = mean(taskData$analyseddata[[i]][[1]][,,1]$data[,9])
-  accuracy[i] = mean(taskData$analyseddata[[i]][[1]][,,1]$data[,6])
-  mRatio[i] = taskData$analyseddata[[i]][[1]][,,1]$mratio
-}
+qnDataList <- lapply(qnData$allqna, function(x) 
+  sapply(extract_vars, function(v) {
+    if (v == "id") {
+      return(x[[1]][,,1][[v]])
+    } else if (v == "bis" || v == "schizo" || v == "eat") {
+      return(x[[1]][,,1][[v]][,,1]$score[,,1]$total)
+    } else {
+      return(x[[1]][,,1][[v]][,,1]$score)
+    }
+  })
+)
 
-# set gender as factor (male or female)
-gender <- factor(gender)
+qnFrame <- as.data.frame(do.call(rbind, qnDataList), stringsAsFactors = FALSE)
 
-## MERGING DATA ##
+# Extract Data from analysed Data File
+# Using lapply to extract individual pieces of data for each subject
+extract_vars_task <- c("id", "age", "gender", "confMean", "accuracy", "mRatio")
+taskDataList <- lapply(taskData$analyseddata, function(x) {
+  data <- x[[1]][,,1]$data
+  c(
+    id = data[1, 4],
+    age = data[1, 2],
+    gender = data[1, 3],
+    confMean = mean(data[, 9], na.rm = TRUE),
+    accuracy = mean(data[, 6], na.rm = TRUE),
+    mRatio = x[[1]][,,1]$mratio
+  )
+})
+taskFrame <- as.data.frame(do.call(rbind, taskDataList), stringsAsFactors = FALSE)
 
-# create dataframe to store questionnaire data
-qnFrame = data.frame(qnid, anxiety, eat, apathy, alcohol, zung, ocir, leb, iq, bis, schizo)
-# create dataframe to store task performance data
-taskFrame = data.frame(id,age,gender,confMean,accuracy,mRatio)
-# merge all data together into one data frame
-allData =merge(taskFrame, qnFrame,by.x=c("id"), by.y=c("qnid"))
-# join HDDM variables to existing dataframe
-allData=data.frame(allData,HDDMpara)
+# Set gender as factor (male or female)
+taskFrame$gender <- factor(taskFrame$gender, labels = c("male", "female"))
 
-## SCALING DATA ##
-#scaling the task performance
-allData$age.sc = scale(allData$age)
-allData$confMean.sc = scale(allData$confMean)
-allData$accuracy.sc = scale(allData$accuracy)
+allData <- taskFrame %>%
+  left_join(qnFrame, by = "id") %>%
+  bind_cols(HDDMpara)
 
-# scaling the questionnaire scores
-allData$zung.sc = scale(log(allData$zung))
-allData$anxiety.sc = scale(log(allData$anxiety))
-allData$ocir.sc = scale(log(allData$ocir+1))
-allData$leb.sc = scale(log(allData$leb+1))
-allData$iq.sc = scale(allData$iq)
-allData$schizo.sc = scale(log(allData$schizo+1))
-allData$bis.sc = scale(log(allData$bis))
-allData$eat.sc = scale(log(allData$eat+1))
-allData$apathy.sc = scale(log(allData$apathy))
-allData$alcohol.sc = scale(log(allData$alcohol+1))
+# Scaling Data
+# List of columns to be scaled
+scale_cols <- c("age", "confMean", "accuracy", "zung", "anxiety", "ocir", "leb", "iq", "schizo", "bis", "eat", "apathy", "alcohol", "a", "t", "v_inter", "v_delta")
+log_transform_cols <- c("zung", "anxiety", "ocir", "leb", "schizo", "bis", "eat", "apathy", "alcohol")  # List of columns that need a log transformation
 
-# scale HDDM variables
-allData$a.sc = scale(allData$a)
-allData$t.sc = scale(allData$t)
-allData$v_inter.sc = scale(allData$v_inter)
-allData$v_delta.sc = scale(allData$v_delta)
+# Scaling and transformation where needed
+allData <- allData %>%
+  mutate(across(all_of(log_transform_cols), ~log(.x + 1), .names = "{col}.sc")) %>%
+  mutate(across(all_of(scale_cols), scale, .names = "{col}.sc"))
 
-#exclude negative mRatios and scale the mRatios of the subjects left
-mrExcludedData <- allData[allData$mRatio>0,] 
-mrExcludedData$mRatio.sc = scale(log(mrExcludedData$mRatio))
+# Exclude negative mRatios and scale the mRatios of the subjects left
+mrExcludedData <- allData %>%
+  filter(mRatio > 0) %>%
+  mutate(mRatio.sc = scale(log(mRatio)))
+
+# Replace factor score id with the id from the task data
+factorScores$id <- mrExcludedData$id
 
 ##  FACTOR ANALYSIS ##
-# LOAD ALL QUESTIONNAIRE (individual questions) DATA
-# create objects
-qnIndivid<-matrix(0,length(qnData$allqna),1)
-zungAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$zung[,,1]$raw))
-anxietyAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$anxiety[,,1]$raw))
-ocirAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$ocir[,,1]$raw))
-lebAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$leb[,,1]$raw[,,1]$avg))
-bisAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$bis[,,1]$raw))
-schizoAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$schizo[,,1]$raw))
-eatAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$eat[,,1]$raw))
-apathyAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$apathy[,,1]$raw))
-alcoholAll<-matrix(0,length(qnData$allqna),length(qnData$allqna[[1]][[1]][,,1]$alcohol[,,1]$raw))
-
-# extracting data from allqna
-for (i in 1:length(qnData$allqna))
-{
-  qnIndivid[i,]=qnData$allqna[[i]][[1]][,,1]$id
-  zungAll[i,] = qnData$allqna[[i]][[1]][,,1]$zung[,,1]$raw #first brackets is subject number
-  anxietyAll[i,] = t(qnData$allqna[[i]][[1]][,,1]$anxiety[,,1]$raw)
-  ocirAll[i,] = qnData$allqna[[i]][[1]][,,1]$ocir[,,1]$raw
-  lebAll[i,] = (qnData$allqna[[i]][[1]][,,1]$leb[,,1]$raw[,,1]$avg)
-  bisAll[i,] = qnData$allqna[[i]][[1]][,,1]$bis[,,1]$raw
-  schizoAll[i,] = qnData$allqna[[i]][[1]][,,1]$schizo[,,1]$raw
-  eatAll[i,]=qnData$allqna[[i]][[1]][,,1]$eat[,,1]$raw
-  apathyAll[i,]=qnData$allqna[[i]][[1]][,,1]$apathy[,,1]$raw
-  alcoholAll[i,]=qnData$allqna[[i]][[1]][,,1]$alcohol[,,1]$raw
+# Create a function to extract raw data from the given list
+extract_raw_data <- function(data_list, variable_name) {
+  sapply(data_list, function(x) x[[1]][,,1][[variable_name]][,,1]$raw)
 }
 
-qns = data.frame("qnid"=qnIndivid,"zung"=zungAll, "anxiety"=anxietyAll,"ocir"= ocirAll, "leb" =lebAll,"bis"= bisAll,"schizo"= schizoAll, 'alcohol'=alcoholAll,'eat'=eatAll,'apathy'=apathyAll)
+# Loop through every subject and extract raw data
+qn_list <- qnData$allqna
+qnIndivid <- sapply(qn_list, function(x) x[[1]][,,1]$id)
 
-################################################################
-################################################################
-# REGRESSIONS 5) PERFORMANCE/METCOG/HDDM ~ FACTOR SCORES  ######
-################################################################
-################################################################
-# Linear regressions for factor scores with task performance & HDDM variables of 
-# 1) performance/ accuracy
-# 2) mean confidence
-# 3) m ratio
+# Extract raw data for each variable
+zungAll <- extract_raw_data(qn_list, 'zung')
+anxietyAll <- extract_raw_data(qn_list, 'anxiety')
+ocirAll <- extract_raw_data(qn_list, 'ocir')
+lebAll <- extract_raw_data(qn_list, 'leb')
+bisAll <- extract_raw_data(qn_list, 'bis')
+schizoAll <- extract_raw_data(qn_list, 'schizo')
+eatAll <- extract_raw_data(qn_list, 'eat')
+apathyAll <- extract_raw_data(qn_list, 'apathy')
+alcoholAll <- extract_raw_data(qn_list, 'alcohol')
 
-#centre the predicted scores as marions are centered
-qnsRou$AD <- scale(qnsRou$AD)
-qnsRou$Compul<- scale(qnsRou$Compul)
-qnsRou$SW<- scale(qnsRou$SW)
+# Combine extracted data into a data frame
+qns <- data.frame(
+  qnid = qnIndivid
+)
 
-# Add predicted factor scores to data frame 
-factorData = merge(allData, qnsRou, by.x = c("id"), by.y = c("id"))
+# adding transposed matrices to the data frame
+qns$zung <- I(t(zungAll))
+qns$anxiety <- I(t(anxietyAll))
+qns$ocir <- I(t(ocirAll))
+qns$leb <- I(t(lebAll))
+qns$bis <- I(t(bisAll))
+qns$schizo <- I(t(schizoAll))
+qns$alcohol <- I(t(alcoholAll))
+qns$eat <- I(t(eatAll))
+qns$apathy <- I(t(apathyAll))
 
-# exclude mRatio < 0 and scale it
-mrExcludFactorData <- factorData[factorData$mRatio>0,]
-mrExcludFactorData$mRatio.sc = scale(log(mrExcludFactorData$mRatio))
+# Set up the regression analyses for evaluating the associations between factor scores and several dependent variables
+# The dependent variables include task performance, HDDM parameters, and others. 
 
-# linear regressions
-accuFactorReg= lm(accuracy.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData) # accuracy
-confMeanFactorReg= lm(confMean.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData) # mean confidence
-mRatioFactorReg= lm(mRatio.sc~AD+Compul+SW+iq.sc+age.sc+gender,mrExcludFactorData) #mRatio
-aFactorReg= lm(a.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData) # a
-tFactorRreg= lm(t.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData) # t
-vDeltaFactorReg= lm(v_delta.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData) # v delta
-vInterFactorReg= lm(v_inter.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData)  #v intercept
+# Centering the predicted scores for normality
+factorScores$AD <- scale(factorScores$AD, center = TRUE, scale = TRUE)
+factorScores$Compul <- scale(factorScores$Compul, center = TRUE, scale = TRUE)
+factorScores$SW <- scale(factorScores$SW, center = TRUE, scale = TRUE)
 
-# test magnitudes of contrasts for mean confidence
+# Concatenate mrExcludedData and factorScores
+mrExcludFactorData <- cbind(mrExcludedData, factorScores)
+
+# Define a list of dependent variables and their corresponding regression models
+dependent_vars <- c("accuracy.sc", "confMean.sc", "mRatio.sc", "a.sc", "t.sc", "v_delta.sc", "v_inter.sc")
+regression_models <- lapply(dependent_vars, function(dep_var) {
+  formula_str <- paste(dep_var, "~ AD + Compul + SW + iq.sc + age.sc + gender")
+  lm(as.formula(formula_str), data = mrExcludFactorData)
+})
+
+# Test magnitude of contrasts for mean confidence
+confMeanFactorReg <- regression_models[[which(dependent_vars == "confMean.sc")]]
 lambda1 <- c(0,1,0,0,0,0,0)
-esticon(confMeanFactorReg, lambda1, beta0=0)
+esticon(confMeanFactorReg, lambda1, beta0 = 0)
 
-# extract coefficients into dataframes
-accuFactorRegFig <- data.frame(summary(accuFactorReg)$coefficients[2:4,1:4])
-confMeanFactorRegFig <- data.frame(summary(confMeanFactorReg)$coefficients[2:4,1:4])
-mRatioFactorRegFig <- data.frame(summary(mRatioFactorReg)$coefficients[2:4,1:4])
-tFactorRregFig <- data.frame(summary(tFactorRreg)$coefficients[2:4,1:4])
-vDeltaFactorRegFig <- data.frame(summary(vDeltaFactorReg)$coefficients[2:4,1:4])
-aFactorRegFig <- data.frame(summary(aFactorReg)$coefficients[2:4,1:4])
-vInterFactorRegFig <- data.frame(summary(vInterFactorReg)$coefficients[2:4,1:4])
+# Extract coefficients into data frames and store in a list
+regression_summaries <- lapply(regression_models, function(model) {
+  coefficients_summary <- summary(model)$coefficients[2:4, 1:4]
+  as.data.frame(coefficients_summary)
+})
+
+# Naming the list elements
+names(regression_summaries) <- dependent_vars
 
 
 ############################################################
-############################################################
-# PLOT 3) PERFORMANCE/METACOG/HDDM ~ FACTOR SCORES #########
-############################################################
+# REGRESSIONS & PLOTS: PERFORMANCE/METCOG/HDDM ~ FACTOR SCORES 
 ############################################################
 
-# set and label dataframe to plot
-accuFactorRegFig$Label<- 'Accuracy'
-accuFactorRegFig$Type<-rownames(accuFactorRegFig)
-summary(accuFactorReg)
-tFactorRregFig$Label<- 't'
-tFactorRregFig$Type<-rownames(tFactorRregFig)
-vDeltaFactorRegFig$Label<- 'v delta'
-vDeltaFactorRegFig$Type<-rownames(vDeltaFactorRegFig)
-aFactorRegFig$Label<- 'a'
-aFactorRegFig$Type<-rownames(aFactorRegFig)
-vInterFactorRegFig$Label<- 'v intercept'
-vInterFactorRegFig$Type<-rownames(vInterFactorRegFig)
-confMeanFactorRegFig$Type<-rownames(confMeanFactorRegFig)
-confMeanFactorRegFig$Label<- 'Confidence Level'
-summary(confMeanFactorReg)
-mRatioFactorRegFig$Type<-rownames(mRatioFactorRegFig)
-mRatioFactorRegFig$Label<- 'Metacognitive Efficiency'
-summary(mRatioFactorReg)
+# Define a mapping of the list names to the Labels you want
+name_to_label <- c(
+  "accuracy.sc" = "Accuracy",
+  "confMean.sc" = "Confidence Level",
+  "mRatio.sc" = "Metacognitive Efficiency",
+  "a.sc" = "a",
+  "t.sc" = "t",
+  "v_delta.sc" = "v delta",
+  "v_inter.sc" = "v intercept"
+)
+
+# Function to set labels and types
+set_labels_and_types <- function(df, label) {
+  df$Label <- label
+  df$Type <- rownames(df)
+  return(df)
+}
+
+# Apply transformations and combine dataframes
+factorRegFig <- regression_summaries %>%
+  imap(~ set_labels_and_types(.x, name_to_label[[.y]])) %>%
+  bind_rows()
+
+# Plotting
+factorRegFig$Label <- factor(factorRegFig$Label, levels = c("Accuracy", "Confidence Level", "Metacognitive Efficiency", "a", "t", "v delta", "v intercept"))
+factorRegFig$Type[factorRegFig$Type == "AD"] <- "Anxious"
+factorRegFig$Type[factorRegFig$Type == "Compul"] <- "Compulsivity"
+factorRegFig$Type[factorRegFig$Type == "SW"] <- "Social Withdrawal"
+
+# Rename std error column
+names(factorRegFig)[names(factorRegFig) == "Std. Error"] <- "StdError"
 
 
-# Plot: Task performance + HDDM + Metacognition ~ Factor Scores
-factorRegFig<-rbind(accuFactorRegFig,tFactorRregFig,vInterFactorRegFig,vDeltaFactorRegFig,aFactorRegFig,confMeanFactorRegFig,mRatioFactorRegFig)
-factorRegFig$Label<-factor(factorRegFig$Label, levels=c("Accuracy","t","v intercept", "v delta",'a','Confidence Level','Metacognitive Efficiency'))
-
-factorRegFig<-rbind(accuFactorRegFig,confMeanFactorRegFig,mRatioFactorRegFig)
-factorRegFig$Label<-factor(factorRegFig$Label, levels=c("Accuracy",'Confidence Level','Metacognitive Efficiency'))
-factorRegFig$Type[factorRegFig$Type=="AD"]<-"Anxious"
-factorRegFig$Type[factorRegFig$Type=="Compul"]<-"Compulsivity"
-factorRegFig$Type[factorRegFig$Type=="SW"]<-"Social Withdrawal"
-
-factorFig <- ggplot(data = factorRegFig, aes(x = Label, y = Estimate, group=Type)) +       
-  geom_bar(aes(fill = Type), colour="black",size=1.2,stat="identity", position = "dodge",width=0.8) +
-  geom_errorbar(aes(ymin=factorRegFig$Estimate-factorRegFig$Std..Error, ymax=factorRegFig$Estimate+factorRegFig$Std..Error),colour="black", width=0.3, size=1.2, position=position_dodge(.8))+
-  geom_hline(yintercept=0,size=1) + theme_classic() + labs(title=" ", x=" ", y = "Regression Coefficient") +
-  theme(axis.title.y = element_text(size = rel(2.5), angle = 90, margin=margin(0,20,0,0)), axis.title.x = element_text(size = rel(3), angle = 00, margin=margin(20,0,0,0)))+
-  theme(plot.title = element_text(size = rel(3), angle = 00),legend.text = element_text(size = 20),legend.title = element_blank()) +
-  theme(axis.text.x = element_text(angle = 00, size=20), axis.text.y = element_text(angle = 00, size=25))+ scale_x_discrete(expand = c(0,0.5)) +
-  theme(axis.line.x = element_line(color="black", size = 1.2), axis.line.y = element_line(color="black", size = 1.2)) +
-  theme(axis.ticks.y=element_line(size=(1.5)), axis.ticks.x=element_line(size=(1.5)), axis.ticks.length=unit(0.4, "cm")) +
-  scale_fill_manual(values=c("#8dd3c7", "#ffffbc","#bebada")) + theme(legend.position="none") + ylim(-0.3,0.3)
+# Use the function
+factorFig <- plot_factor_fig(factorRegFig)
 factorFig
-ggsave(factorFig, file=paste(baseDir, 'figs/marionRegsFinal.eps', sep=''), device="eps")
+
+# Create figure directory
+dir.create("figures/external_validation", showWarnings = TRUE, recursive = TRUE)
+
+# Save the plot
+ggsave(factorFig, file = paste('figures/external_validation/marionRegsFinal.eps', sep = ''), device = "eps")
+# And as png
+ggsave(factorFig, file = paste('figures/external_validation/marionRegsFinal.png', sep = ''), device = "png")
+
+# Create directory for regressions
+dir.create("data/regressions", showWarnings = FALSE, recursive = TRUE)
+
+# Save factorRegFig to csv
+write.csv(factorRegFig, file = "data/regressions/RouaultFactorReg_predictedScores.csv", row.names = FALSE)
 
 ############################################################
-############################################################
-# ADD MARIONS ORIGINAL RESULTS TO PLOT #########
-############################################################
+# ADDING ORIGINAL RESULTS TO PLOT 
 ############################################################
 
-# DO FACTOR ANALYSIS ON RAW QUESTIONAIRRE SCORES
-# Produce covariance matrix using hetcor to account for both continuous and binary correlations
-het.mat <- hetcor(qns[,2:length(qns)])$cor
+# Load Data
+scoresOriginal <- read.csv("data/EFAscores/RouaultScores.csv") # Load items
 
-fa <- fa(r = het.mat, nfactors = 3, n.obs = nrow(qns), rotate = "oblimin", fm="ml", scores="regression")
-fa.scores <- factor.scores(x=qns[,2:length(qns)], f=fa)
-scoresOriginal = data.frame("id"=qns$qnid, fa.scores$scores)
-loadings <- fa$loadings
+# Concatenate mrExcludedData and factorScores
+mrExcludFactorData2 <- cbind(mrExcludedData, scoresOriginal)
 
-# loadings plot m2= sa, m1 = a&d, m4 = impul, m3 = compul (THIS CAN CHANGE W THE FACTOR ANAYLSIS)
-colnames(scoresOriginal) <- c("id", "AD", "Compul", "SW")
-factorData2 =merge(allData, scoresOriginal,by.x=c("id"), by.y=c("id")) #join factor scores with main data matrix
-factorData2<- subset(factorData2,id != 8355082 ) #remove subject excluded from predicted score data
+# Performing linear regressions
+accuFactorReg2 <- lm(accuracy.sc ~ AD + Compul + SW + iq.sc + age.sc + gender, data = mrExcludFactorData2)
+confMeanFactorReg2 <- lm(confMean.sc ~ AD + Compul + SW + iq.sc + age.sc + gender, data = mrExcludFactorData2)
+mRatioFactorReg2 <- lm(mRatio.sc ~ AD + Compul + SW + iq.sc + age.sc + gender, data = mrExcludFactorData2)
 
+# Testing magnitudes of contrasts for mean confidence
+esticon(confMeanFactorReg2, c(0, 1, rep(0, 5)))
 
-# exclude mRatio < 0 and scale it
-mrExcludFactorData2 <- factorData2[factorData2$mRatio>0,]
-mrExcludFactorData2$mRatio.sc = scale(log(mrExcludFactorData2$mRatio))
+# Extracting coefficients into dataframes and labeling them
+extract_and_label <- function(model, label) {
+  df <- data.frame(summary(model)$coefficients[2:4, 1:4], Label = label, Type = rownames(summary(model)$coefficients[2:4, ]))
+}
 
-# linear regressions
-accuFactorReg2= lm(accuracy.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData2) # accuracy
-confMeanFactorReg2= lm(confMean.sc~AD+Compul+SW+iq.sc+age.sc+gender,factorData2) # mean confidence
-mRatioFactorReg2= lm(mRatio.sc~AD+Compul+SW+iq.sc+age.sc+gender,mrExcludFactorData2) #mRatio
+accuFactorRegFig2 <- extract_and_label(accuFactorReg2, 'Accuracy')
+confMeanFactorRegFig2 <- extract_and_label(confMeanFactorReg2, 'Confidence Level')
+mRatioFactorRegFig2 <- extract_and_label(mRatioFactorReg2, 'Metacognitive Efficiency')
 
-# test magnitudes of contrasts for mean confidence
-lambda1 <- c(0,1,0,0,0,0,0)
-esticon(confMeanFactorReg2, lambda1, beta0=0)
+# Plotting Task Performance, HDDM, Metacognition against Factor Scores
+factorRegFig2 <- rbind(accuFactorRegFig2, confMeanFactorRegFig2, mRatioFactorRegFig2)
+factorRegFig2$Label <- factor(factorRegFig2$Label, levels = c("Accuracy", 'Confidence Level', 'Metacognitive Efficiency'))
+factorRegFig2$Type[factorRegFig2$Type == "AD"] <- "Anxious"
+factorRegFig2$Type[factorRegFig2$Type == "Compul"] <- "Compulsivity"
+factorRegFig2$Type[factorRegFig2$Type == "SW"] <- "Social Withdrawal"
 
-# extract coefficients into dataframes
-accuFactorRegFig2 <- data.frame(summary(accuFactorReg2)$coefficients[2:4,1:4])
-confMeanFactorRegFig2 <- data.frame(summary(confMeanFactorReg2)$coefficients[2:4,1:4])
-mRatioFactorRegFig2 <- data.frame(summary(mRatioFactorReg2)$coefficients[2:4,1:4])
+# Rename std error column
+names(factorRegFig2)[names(factorRegFig2) == "Std..Error"] <- "StdError"
 
-# set and label dataframe to plot
-accuFactorRegFig2$Label<- 'Accuracy'
-accuFactorRegFig2$Type<-rownames(accuFactorRegFig2)
-confMeanFactorRegFig2$Type<-rownames(confMeanFactorRegFig2)
-confMeanFactorRegFig2$Label<- 'Confidence Level'
-mRatioFactorRegFig2$Type<-rownames(mRatioFactorRegFig2)
-mRatioFactorRegFig2$Label<- 'Metacognitive Efficiency'
+# Save factorRegFig2 to csv
+write.csv(factorRegFig2, file = "data/regressions/RouaultFactorReg_originalScores.csv", row.names = FALSE)
 
-# Plot: Task performance + HDDM + Metacognition ~ Factor Scores
-factorRegFig2<-rbind(accuFactorRegFig2,confMeanFactorRegFig2,mRatioFactorRegFig2)
-factorRegFig2$Label<-factor(factorRegFig2$Label, levels=c("Accuracy",'Confidence Level','Metacognitive Efficiency'))
+# Use the function
+factorFig2 <- plot_factor_fig(factorRegFig2)
+plot
 
-factorRegFig2<-rbind(accuFactorRegFig2,confMeanFactorRegFig2,mRatioFactorRegFig2)
-factorRegFig2$Label<-factor(factorRegFig2$Label, levels=c("Accuracy",'Confidence Level','Metacognitive Efficiency'))
-factorRegFig2$Type[factorRegFig$Type=="AD"]<-"Anxious"
-factorRegFig2$Type[factorRegFig$Type=="Compul"]<-"Compulsivity"
-factorRegFig2$Type[factorRegFig$Type=="SW"]<-"Social Withdrawal"
-
-factorFig2 <- ggplot(data = factorRegFig2, aes(x = Label, y = Estimate, group=Type)) +       
-  geom_bar(aes(fill = Type), colour="black",size=1.2,stat="identity", position = "dodge",width=0.8) +
-  geom_errorbar(aes(ymin=factorRegFig2$Estimate-factorRegFig2$Std..Error, ymax=factorRegFig2$Estimate+factorRegFig2$Std..Error),colour="black", width=0.3, size=1.2, position=position_dodge(.8))+
-  geom_hline(yintercept=0,size=1) + theme_classic() + labs(title=" ", x=" ", y = "Regression Coefficient") +
-  theme(axis.title.y = element_text(size = rel(2.5), angle = 90, margin=margin(0,20,0,0)), axis.title.x = element_text(size = rel(3), angle = 00, margin=margin(20,0,0,0)))+
-  theme(plot.title = element_text(size = rel(3), angle = 00),legend.text = element_text(size = 20),legend.title = element_blank()) +
-  theme(axis.text.x = element_text(angle = 00, size=20), axis.text.y = element_text(angle = 00, size=25))+ scale_x_discrete(expand = c(0,0.5)) +
-  theme(axis.line.x = element_line(color="black", size = 1.2), axis.line.y = element_line(color="black", size = 1.2)) +
-  theme(axis.ticks.y=element_line(size=(1.5)), axis.ticks.x=element_line(size=(1.5)), axis.ticks.length=unit(0.4, "cm")) +
-  scale_fill_manual(values=c("#8dd3c7", "#ffffbc","#bebada")) + theme(legend.position="none") + ylim(-0.3,0.3)
-factorFig2
-ggsave(factorFig2, file=paste(baseDir, 'figs/marionRegsOriginal.eps', sep=''), device="eps")
-
-library(ggpubr)
+# Put plots together
 ggarrange(factorFig, factorFig2)
 
+# Save the plot
+ggsave(factorFig2, file = paste('figures/external_validation/marionRegsFinal2.eps', sep = ''), device = "eps")
 
