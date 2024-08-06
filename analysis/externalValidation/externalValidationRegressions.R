@@ -100,7 +100,7 @@ HDDMpara <- data.frame(t(HDDM[1:nrow(HDDM), 2:ncol(HDDM)]))
 colnames(HDDMpara) <- c("a", "t", "v_inter", "v_delta")
 
 ## LOAD PREDICTED FACTOR SCORES
-factorScores <- read.csv('data/predictions_best.csv') # load HDDM data
+factorScores <- read.csv('data/predictions_70item.csv') # load HDDM data
 # select where study == 3 (Rouault)
 factorScores <- factorScores[factorScores$study == 3,]
 
